@@ -13,9 +13,7 @@ var (
 	// default server config
 	C Config = Config{
 		Log: log.ZapLoggerConfig{
-			File:   "llmapi.log",
-			Format: "console",
-			Level:  "info",
+			Level: "info",
 		},
 		Host: "0.0.0.0:9000",
 	}
