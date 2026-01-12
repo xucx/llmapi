@@ -5,10 +5,9 @@ import (
 	"fmt"
 
 	"github.com/xucx/llmapi"
+	apiprovider "github.com/xucx/llmapi/internal/providers/llmapi"
 
 	apiv1 "github.com/xucx/llmapi/api/v1"
-	"github.com/xucx/llmapi/internal/server/api/v1/util"
-	v1util "github.com/xucx/llmapi/internal/server/api/v1/util"
 	"github.com/xucx/llmapi/log"
 	"github.com/xucx/llmapi/types"
 
@@ -39,14 +38,14 @@ func (s *ApiService) Chat(ctx context.Context, req *apiv1.ChatRequest) (*apiv1.C
 
 	messages := []*types.Message{}
 	for _, m := range req.ChatParams.Messages {
-		msg, err := v1util.ToMessage(m)
+		msg, err := apiprovider.ToMessage(m)
 		if err != nil {
 			return nil, err
 		}
 		messages = append(messages, msg)
 	}
 
-	options, err := v1util.ChatParamsToOptions(req.ChatParams)
+	options, err := apiprovider.ChatParamsToOptions(req.ChatParams)
 	if err != nil {
 		return nil, GrpcArgumentError
 	}
@@ -57,7 +56,7 @@ func (s *ApiService) Chat(ctx context.Context, req *apiv1.ChatRequest) (*apiv1.C
 		return nil, GrpcInternalError
 	}
 
-	retCompletion, err := v1util.FromChatCompletion(completion)
+	retCompletion, err := apiprovider.FromChatCompletion(completion)
 	if err != nil {
 		return nil, GrpcInternalError
 	}
@@ -75,14 +74,14 @@ func (s *ApiService) ChatStream(req *apiv1.ChatStreamRequest, stream apiv1.ApiSe
 
 	messages := []*types.Message{}
 	for _, m := range req.ChatParams.Messages {
-		msg, err := v1util.ToMessage(m)
+		msg, err := apiprovider.ToMessage(m)
 		if err != nil {
 			return err
 		}
 		messages = append(messages, msg)
 	}
 
-	options, err := v1util.ChatParamsToOptions(req.ChatParams)
+	options, err := apiprovider.ChatParamsToOptions(req.ChatParams)
 	if err != nil {
 		return GrpcArgumentError
 	}
@@ -91,7 +90,7 @@ func (s *ApiService) ChatStream(req *apiv1.ChatStreamRequest, stream apiv1.ApiSe
 		types.ChatWithStreamingFunc(func(ctx context.Context, c *types.Completion) error {
 			log.Debugw("api recv chunck completeion", "completion", c)
 
-			deltaCompletion, err := util.FromChatCompletion(c)
+			deltaCompletion, err := apiprovider.FromChatCompletion(c)
 			if err != nil {
 				return err
 			}
@@ -110,7 +109,7 @@ func (s *ApiService) ChatStream(req *apiv1.ChatStreamRequest, stream apiv1.ApiSe
 
 	log.Debugw("api recv completeion", "completion", completion)
 
-	fullCompletion, err := util.FromChatCompletion(completion)
+	fullCompletion, err := apiprovider.FromChatCompletion(completion)
 	if err != nil {
 		return GrpcInternalError
 	}
@@ -140,7 +139,7 @@ func (s *ApiService) ChatRealtime(stream apiv1.ApiService_ChatRealtimeServer) er
 				return
 			}
 
-			message, err := v1util.ToMessage(req.Message)
+			message, err := apiprovider.ToMessage(req.Message)
 			if err != nil {
 				return
 			}
@@ -157,7 +156,7 @@ func (s *ApiService) ChatRealtime(stream apiv1.ApiService_ChatRealtimeServer) er
 			break
 		}
 
-		completion, err := v1util.FromChatCompletion(rsp)
+		completion, err := apiprovider.FromChatCompletion(rsp)
 		if err != nil {
 			return err
 		}
@@ -186,7 +185,7 @@ func (s *ApiService) initRealtime(stream apiv1.ApiService_ChatRealtimeServer) (t
 
 	messages := []*types.Message{}
 	for _, m := range req.Init.ChatParams.Messages {
-		msg, err := v1util.ToMessage(m)
+		msg, err := apiprovider.ToMessage(m)
 		if err != nil {
 			return nil, err
 		}
@@ -202,14 +201,14 @@ func (s *ApiService) initRealtime(stream apiv1.ApiService_ChatRealtimeServer) (t
 	}
 
 	if req.Init.ChatParams.Tools != nil {
-		tools, err := v1util.ToChatTools(req.Init.ChatParams.Tools)
+		tools, err := apiprovider.ToChatTools(req.Init.ChatParams.Tools)
 		if err != nil {
 			return nil, err
 		}
 		options = append(options, types.RealTimeWithTools(tools))
 	}
 	if req.Init.ChatParams.Voice != "" {
-		voice, err := v1util.ToChatVoice(req.Init.ChatParams.Voice)
+		voice, err := apiprovider.ToChatVoice(req.Init.ChatParams.Voice)
 		if err != nil {
 			return nil, err
 		}

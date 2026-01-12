@@ -23,7 +23,7 @@ type Config struct {
 	Log    log.ZapLoggerConfig `yaml:"log"`
 	Host   string              `yaml:"host"`
 	Tokens []string            `yaml:"tokens"`
-	Model  llmapi.Config       `yaml:"model"`
+	LLM    llmapi.Config       `yaml:"llm"`
 }
 
 func LoadConfig(f string) error {

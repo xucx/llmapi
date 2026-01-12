@@ -250,6 +250,10 @@ type ChatOptions struct {
 	StreamingFunc    ChatStreamingFunc
 	StreamingAccFunc ChatStreamingFunc
 	Temperature      *float32
+	TopP             *float32
+	TopK             *int
+	MaxTokens        *int64
+	StopSequences    []string
 	// Modalities    []Modality
 	AudioVoice AudioVoiceType
 }

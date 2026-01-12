@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/labstack/echo/v4"
+	"github.com/xucx/llmapi/internal/server/api/middleware"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -12,51 +14,60 @@ import (
 )
 
 const (
-	AuthHeader = "Authorization"
+	DefaultAuthHeader     = "Authorization"
+	DefaultAuthHeaderType = "Bearer"
 )
 
+type HttpTokenGetter func(echo.Context) (string, error)
+
+type AuthOpts struct {
+	Tokens          []string
+	HttpTokenGetter HttpTokenGetter
+}
+
+type AuthOpt func(*AuthOpts)
+
+func AuthWithTokens(tokens []string) AuthOpt {
+	return func(opts *AuthOpts) {
+		opts.Tokens = tokens
+	}
+}
+
+func AuthWithHttpTokenGetter(getter HttpTokenGetter) AuthOpt {
+	return func(opts *AuthOpts) {
+		opts.HttpTokenGetter = getter
+	}
+}
+
 type Auth struct {
-	tokens []string
+	middleware.NopMiddleware
+	opts *AuthOpts
 }
 
-func NewAuth(tokens []string) *Auth {
-	return &Auth{tokens: tokens}
-}
-
-func (a Auth) checkAuth(ctx context.Context) error {
-
-	token, err := a.token(ctx)
-	if err != nil {
-		return err
+func NewAuth(opts ...AuthOpt) *Auth {
+	option := &AuthOpts{
+		HttpTokenGetter: DefaultAuthHttpHeaderGetter,
 	}
 
-	ts := strings.Split(token, " ")
-	if len(ts) == 2 {
-		if ts[0] != "Bearer" {
-			return errors.New("invalid token format")
-		}
-		for _, t := range a.tokens {
-			if ts[1] == t {
-				return nil
-			}
-		}
+	for _, opt := range opts {
+		opt(option)
 	}
 
-	return errors.New("auth fail")
+	return &Auth{opts: option}
 }
 
-func (a Auth) Unary() grpc.UnaryServerInterceptor {
+func (a *Auth) Unary() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (response interface{}, err error) {
-		if err := a.checkAuth(ctx); err != nil {
+		if err := a.checkGrpcAuth(ctx); err != nil {
 			return nil, status.Errorf(codes.Unauthenticated, "Unauthenticated: %v", err)
 		}
 		return handler(ctx, req)
 	}
 }
 
-func (a Auth) Stream() grpc.StreamServerInterceptor {
+func (a *Auth) Stream() grpc.StreamServerInterceptor {
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		if err := a.checkAuth(stream.Context()); err != nil {
+		if err := a.checkGrpcAuth(stream.Context()); err != nil {
 			return status.Errorf(codes.Unauthenticated, "Unauthenticated: %v", err)
 		}
 
@@ -64,12 +75,62 @@ func (a Auth) Stream() grpc.StreamServerInterceptor {
 	}
 }
 
-func (a Auth) token(ctx context.Context) (string, error) {
+func (a *Auth) Http() echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			if err := a.checkHttpAuth(c); err != nil {
+				return echo.ErrUnauthorized
+			}
+			return next(c)
+		}
+	}
+}
+
+func (a *Auth) checkGrpcAuth(ctx context.Context) error {
+
 	md, ok := metadata.FromIncomingContext(ctx)
-	if ok {
-		tokens := md.Get(AuthHeader)
-		if len(tokens) > 0 {
-			return tokens[0], nil
+	if !ok {
+		return errors.New("authorization not found")
+	}
+
+	tokens := md.Get(DefaultAuthHeader)
+	if len(tokens) == 0 {
+		return errors.New("authorization not found")
+	}
+
+	return a.checkToken(tokens[0])
+}
+
+func (a *Auth) checkHttpAuth(ctx echo.Context) error {
+
+	token, err := a.opts.HttpTokenGetter(ctx)
+	if err != nil {
+		return err
+	}
+
+	return a.checkToken(token)
+}
+
+func (a *Auth) checkToken(token string) error {
+	if len(a.opts.Tokens) == 0 {
+		return nil
+	}
+
+	for _, t := range a.opts.Tokens {
+		if token == t {
+			return nil
+		}
+	}
+
+	return errors.New("token not match")
+}
+
+func DefaultAuthHttpHeaderGetter(ctx echo.Context) (string, error) {
+	token := ctx.Request().Header.Get(DefaultAuthHeader)
+	ts := strings.Split(token, " ")
+	if len(ts) == 2 {
+		if ts[0] == DefaultAuthHeaderType {
+			return ts[1], nil
 		}
 	}
 

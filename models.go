@@ -36,10 +36,10 @@ type ModelConfig struct {
 }
 
 type Model struct {
-	Name      string
-	ModelName string
-	Provider  provider.Provider
-	MaxToken  int64
+	Name     string
+	Model    string
+	Provider provider.Provider
+	MaxToken int64
 }
 
 type Models struct {
@@ -81,10 +81,10 @@ func NewModel(name, model string, maxToken int64, provider provider.Provider) (*
 	}
 
 	return &Model{
-		Provider:  provider,
-		Name:      name,
-		ModelName: model,
-		MaxToken:  maxToken,
+		Provider: provider,
+		Name:     name,
+		Model:    model,
+		MaxToken: maxToken,
 	}, nil
 }
 
@@ -98,12 +98,12 @@ func NewModelFromConfig(conf ProviderConfig, name, model string, maxToken int64)
 }
 
 func (m *Model) Generate(ctx context.Context, messages []*types.Message, options ...types.ChatOption) (*types.Completion, error) {
-	optionsWithModel := append(options, types.ChatWithModel(m.ModelName))
+	optionsWithModel := append(options, types.ChatWithModel(m.Model))
 	return m.Provider.Generate(ctx, messages, optionsWithModel...)
 }
 
 func (m *Model) Realtime(ctx context.Context, messages []*types.Message, options ...types.RealTimeOption) (types.RealTimeSession, error) {
-	optionsWithModel := append(options, types.RealTimeWithModel(m.ModelName))
+	optionsWithModel := append(options, types.RealTimeWithModel(m.Model))
 	return m.Provider.Realtime(ctx, messages, optionsWithModel...)
 }
 
@@ -143,9 +143,9 @@ func (m *Models) GetModel(name string) (*Model, error) {
 	if len(items) == 2 {
 		if provider, ok := m.providers[items[0]]; ok {
 			return &Model{
-				Name:      items[1],
-				ModelName: items[1],
-				Provider:  provider,
+				Name:     items[1],
+				Model:    items[1],
+				Provider: provider,
 			}, nil
 		}
 	}
