@@ -188,36 +188,36 @@ func ToMessage(from *apiv1.ChatMessage) (*types.Message, error) {
 
 	for _, p := range from.Contents {
 		if text := p.GetText(); text != nil {
-			to.Parts = append(to.Parts, &types.MessageText{
+			to.Parts = append(to.Parts, &types.MessagePart{Text: &types.MessageText{
 				Text: text.Text,
-			})
+			}})
 		} else if reasoning := p.GetReasoning(); reasoning != nil {
-			to.Parts = append(to.Parts, &types.MessageReasoning{
+			to.Parts = append(to.Parts, &types.MessagePart{Reasoning: &types.MessageReasoning{
 				Text:             reasoning.Text,
 				ThoughtSignature: reasoning.ThoughtSignature,
-			})
+			}})
 		} else if toolCall := p.GetToolCall(); toolCall != nil {
-			to.Parts = append(to.Parts, &types.MessageToolCall{
+			to.Parts = append(to.Parts, &types.MessagePart{ToolCall: &types.MessageToolCall{
 				ID:   toolCall.Id,
 				Type: "function",
 				Function: &types.ToolCallFunction{
 					Name:      toolCall.Name,
 					Arguments: toolCall.Arguments,
 				},
-			})
+			}})
 		} else if toolResult := p.GetToolResult(); toolResult != nil {
-			to.Parts = append(to.Parts, &types.MessageToolResult{
+			to.Parts = append(to.Parts, &types.MessagePart{ToolResult: &types.MessageToolResult{
 				ID:     toolResult.Id,
 				Name:   toolResult.Name,
 				Result: toolResult.Result,
-			})
+			}})
 		} else if audio := p.GetAudio(); audio != nil {
-			to.Parts = append(to.Parts, &types.MessageAudio{
+			to.Parts = append(to.Parts, &types.MessagePart{Audio: &types.MessageAudio{
 				Delta:      audio.Delta,
 				Data:       audio.Data,
 				Format:     audio.Format,
 				Transcript: audio.Transcript,
-			})
+			}})
 		} else {
 			//
 		}
@@ -233,40 +233,40 @@ func FromMessage(from *types.Message) (*apiv1.ChatMessage, error) {
 	}
 
 	for _, part := range from.Parts {
-		switch p := part.(type) {
-		case *types.MessageText:
+		switch {
+		case part.Text != nil:
 			to.Contents = append(to.Contents, &apiv1.ChatContent{Content: &apiv1.ChatContent_Text{
 				Text: &apiv1.ChatContentText{
-					Text: p.Text,
+					Text: part.Text.Text,
 				},
 			}})
-		case *types.MessageReasoning:
+		case part.Reasoning != nil:
 			to.Contents = append(to.Contents, &apiv1.ChatContent{Content: &apiv1.ChatContent_Reasoning{
 				Reasoning: &apiv1.ChatContentReasoning{
-					Text:             p.Text,
-					ThoughtSignature: p.ThoughtSignature,
+					Text:             part.Reasoning.Text,
+					ThoughtSignature: part.Reasoning.ThoughtSignature,
 				},
 			}})
-		case *types.MessageRefusal:
+		case part.Refusal != nil:
 			to.Contents = append(to.Contents, &apiv1.ChatContent{Content: &apiv1.ChatContent_Refusal{
 				Refusal: &apiv1.ChatContentRefusal{
-					Text: p.Text,
+					Text: part.Refusal.Text,
 				},
 			}})
-		case *types.MessageToolCall:
+		case part.ToolCall != nil:
 			to.Contents = append(to.Contents, &apiv1.ChatContent{Content: &apiv1.ChatContent_ToolCall{
 				ToolCall: &apiv1.ChatContentToolCall{
-					Id:        p.ID,
-					Name:      p.Function.Name,
-					Arguments: p.Function.Arguments,
+					Id:        part.ToolCall.ID,
+					Name:      part.ToolCall.Function.Name,
+					Arguments: part.ToolCall.Function.Arguments,
 				},
 			}})
-		case *types.MessageToolResult:
+		case part.ToolResult != nil:
 			to.Contents = append(to.Contents, &apiv1.ChatContent{Content: &apiv1.ChatContent_ToolResult{
 				ToolResult: &apiv1.ChatContentToolResult{
-					Id:     p.ID,
-					Name:   p.Name,
-					Result: p.Result,
+					Id:     part.ToolResult.ID,
+					Name:   part.ToolResult.Name,
+					Result: part.ToolResult.Result,
 				},
 			}})
 		default:

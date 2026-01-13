@@ -2,9 +2,7 @@ package anthropic
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
-	"net/http"
 	"strings"
 
 	"github.com/xucx/llmapi/types"
@@ -77,72 +75,61 @@ func toChatMessages(params *anthropic.MessageNewParams, messages []*types.Messag
 
 		for _, part := range msg.Parts {
 			var toPart *anthropic.ContentBlockParamUnion
-			switch p := part.(type) {
-			case *types.MessageText:
+			switch {
+			case part.Text != nil:
 				toPart = &anthropic.ContentBlockParamUnion{
 					OfText: &anthropic.TextBlockParam{
-						Text: p.Text,
+						Text: part.Text.Text,
 					},
 				}
-			case *types.MessageRefusal:
+			case part.Refusal != nil:
 				// not support
-			case *types.MessageImageURL:
+			case part.ImageURL != nil:
 				toPart = &anthropic.ContentBlockParamUnion{
 					OfImage: &anthropic.ImageBlockParam{
 						Source: anthropic.ImageBlockParamSourceUnion{
 							OfURL: &anthropic.URLImageSourceParam{
-								URL: p.URL,
+								URL: part.ImageURL.URL,
 							},
 						},
 					},
 				}
-			case *types.MessageFile:
-				mime := p.MIMEType
-				if mime == "" {
-					mime = http.DetectContentType(p.Data)
-				}
-
-				base64Data := fmt.Sprintf(
-					"data:%s,base64,%s",
-					mime,
-					base64.StdEncoding.EncodeToString(p.Data),
-				)
-
+			case part.File != nil:
 				toPart = &anthropic.ContentBlockParamUnion{
 					OfDocument: &anthropic.DocumentBlockParam{
 						Source: anthropic.DocumentBlockParamSourceUnion{
 							OfBase64: &anthropic.Base64PDFSourceParam{
-								Data:      base64Data,
-								MediaType: constant.ApplicationPDF(mime),
+								Data:      part.File.Data,
+								MediaType: constant.ApplicationPDF(part.File.MIMEType), //?? check
 							},
 						},
 					},
 				}
 
-			case *types.MessageAudio:
+			case part.Audio != nil:
 				// not support
 				continue
-			case *types.MessageToolCall:
+			case part.ToolCall != nil:
 				// only support fucntion tool call
-				if p.Type != types.ToolTypeFunction || p.Function == nil {
+				if part.ToolCall.Type != types.ToolTypeFunction || part.ToolCall.Function == nil {
 					continue
 				}
 				toPart = &anthropic.ContentBlockParamUnion{
 					OfToolUse: &anthropic.ToolUseBlockParam{
-						ID:    p.ID,
-						Name:  p.Function.Name,
-						Input: p.Function.Arguments,
+						ID:    part.ToolCall.ID,
+						Name:  part.ToolCall.Function.Name,
+						Input: part.ToolCall.Function.Arguments,
 					},
 				}
 
-			case *types.MessageToolResult:
+			case part.ToolResult != nil:
 				toPart = &anthropic.ContentBlockParamUnion{
 					OfToolResult: &anthropic.ToolResultBlockParam{
-						ToolUseID: p.ID,
+						ToolUseID: part.ToolResult.ID,
 						Content: []anthropic.ToolResultBlockParamContentUnion{
 							{
 								OfText: &anthropic.TextBlockParam{
-									Text: p.Result,
+									Text: part.ToolResult.Result,
 								},
 							},
 						},
@@ -229,12 +216,14 @@ func fromChatCompletion(msg *anthropic.Message) (*types.Completion, error) {
 		case anthropic.TextBlock:
 			contentBuf.WriteString(variant.Text)
 		case anthropic.ToolUseBlock:
-			completion.Message.Parts = append(completion.Message.Parts, &types.MessageToolCall{
-				ID:   variant.ID,
-				Type: "function",
-				Function: &types.ToolCallFunction{
-					Name:      variant.Name,
-					Arguments: string(variant.Input),
+			completion.Message.Parts = append(completion.Message.Parts, &types.MessagePart{
+				ToolCall: &types.MessageToolCall{
+					ID:   variant.ID,
+					Type: "function",
+					Function: &types.ToolCallFunction{
+						Name:      variant.Name,
+						Arguments: string(variant.Input),
+					},
 				},
 			})
 
@@ -245,11 +234,11 @@ func fromChatCompletion(msg *anthropic.Message) (*types.Completion, error) {
 
 	reasoning := reasoningBuf.String()
 	if reasoning != "" {
-		completion.Message.Parts = append(completion.Message.Parts, &types.MessageReasoning{Text: reasoning})
+		completion.Message.Parts = append(completion.Message.Parts, &types.MessagePart{Reasoning: &types.MessageReasoning{Text: reasoning}})
 	}
 	content := contentBuf.String()
 	if content != "" {
-		completion.Message.Parts = append(completion.Message.Parts, &types.MessageText{Text: content})
+		completion.Message.Parts = append(completion.Message.Parts, &types.MessagePart{Text: &types.MessageText{Text: content}})
 	}
 
 	return completion, nil

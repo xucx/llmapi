@@ -42,7 +42,6 @@ func Run(ctx context.Context) error {
 		middlewares.NewAuth(
 			middlewares.AuthWithTokens(C.Tokens),
 			middlewares.AuthWithHttpTokenGetter(func(ctx echo.Context) (string, error) {
-				fmt.Println("ctx.Request().URL.Path:", ctx.Request().URL.Path)
 				if ctx.Request().URL.Path == "/api/v1/claude/messages" {
 					return ctx.Request().Header.Get("X-Api-Key"), nil
 				}

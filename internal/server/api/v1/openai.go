@@ -192,7 +192,7 @@ func fromOpenaiMessage(m OpenaiMessage) (*types.Message, error) {
 	if m.Content != nil {
 		switch c := m.Content.(type) {
 		case string:
-			msg.Parts = append(msg.Parts, &types.MessageText{Text: c})
+			msg.Parts = append(msg.Parts, &types.MessagePart{Text: &types.MessageText{Text: c}})
 		case []interface{}:
 			for _, item := range c {
 				if itemMap, ok := item.(map[string]interface{}); ok {
@@ -200,12 +200,12 @@ func fromOpenaiMessage(m OpenaiMessage) (*types.Message, error) {
 					switch itemType {
 					case "text":
 						if text, ok := itemMap["text"].(string); ok {
-							msg.Parts = append(msg.Parts, &types.MessageText{Text: text})
+							msg.Parts = append(msg.Parts, &types.MessagePart{Text: &types.MessageText{Text: text}})
 						}
 					case "image_url":
 						if imageUrlObj, ok := itemMap["image_url"].(map[string]interface{}); ok {
 							url, _ := imageUrlObj["url"].(string)
-							msg.Parts = append(msg.Parts, &types.MessageImageURL{URL: url})
+							msg.Parts = append(msg.Parts, &types.MessagePart{ImageURL: &types.MessageImageURL{URL: url}})
 						}
 					}
 				}
@@ -216,14 +216,14 @@ func fromOpenaiMessage(m OpenaiMessage) (*types.Message, error) {
 	// Handle Tool Calls
 	if len(m.ToolCalls) > 0 {
 		for _, tc := range m.ToolCalls {
-			msg.Parts = append(msg.Parts, &types.MessageToolCall{
+			msg.Parts = append(msg.Parts, &types.MessagePart{ToolCall: &types.MessageToolCall{
 				ID:   tc.ID,
 				Type: types.ToolTypeFunction,
 				Function: &types.ToolCallFunction{
 					Name:      tc.Function.Name,
 					Arguments: tc.Function.Arguments,
 				},
-			})
+			}})
 		}
 	}
 
@@ -233,10 +233,10 @@ func fromOpenaiMessage(m OpenaiMessage) (*types.Message, error) {
 		if s, ok := m.Content.(string); ok {
 			result = s
 		}
-		msg.Parts = append(msg.Parts, &types.MessageToolResult{
+		msg.Parts = append(msg.Parts, &types.MessagePart{ToolResult: &types.MessageToolResult{
 			ID:     m.ToolCallId,
 			Result: result,
-		})
+		}})
 	}
 
 	return msg, nil

@@ -160,54 +160,58 @@ func toChatContents(messages []*types.Message) ([]*genai.Content, *contentsOpt, 
 
 		for _, part := range msg.Parts {
 			var toPart *genai.Part
-			switch p := part.(type) {
-			case *types.MessageReasoning:
-				if p.ThoughtSignature != "" {
-					thoughtSignature, _ = base64.StdEncoding.DecodeString(p.ThoughtSignature)
+			switch {
+			case part.Reasoning != nil:
+				if part.Reasoning.ThoughtSignature != "" {
+					thoughtSignature, _ = base64.StdEncoding.DecodeString(part.Reasoning.ThoughtSignature)
 				}
-			case *types.MessageText:
+			case part.Text != nil:
 				toPart = &genai.Part{
-					Text:             p.Text,
+					Text:             part.Text.Text,
 					ThoughtSignature: thoughtSignature,
 				}
-			case *types.MessageRefusal:
+			case part.Refusal != nil:
 				// not support
-			case *types.MessageImageURL:
+			case part.ImageURL != nil:
 				toPart = &genai.Part{
 					FileData: &genai.FileData{
-						FileURI: p.URL,
+						FileURI: part.ImageURL.URL,
 					},
 				}
-			case *types.MessageFile:
+			case part.File != nil:
+				data, err := base64.RawStdEncoding.DecodeString(part.File.Data)
+				if err != nil {
+					return nil, nil, err
+				}
 				toPart = &genai.Part{
 					InlineData: &genai.Blob{
-						MIMEType:    p.MIMEType,
-						Data:        p.Data,
-						DisplayName: p.Name,
+						MIMEType:    part.File.MIMEType,
+						Data:        data,
+						DisplayName: part.File.Name,
 					},
 				}
-			case *types.MessageAudio:
-				if !p.Delta {
-					data, err := base64.StdEncoding.DecodeString(p.Data)
+			case part.Audio != nil:
+				if !part.Audio.Delta {
+					data, err := base64.StdEncoding.DecodeString(part.Audio.Data)
 					if err != nil {
 						log.Fatal(err)
 					}
 					toPart = &genai.Part{
 						InlineData: &genai.Blob{
-							MIMEType: fmt.Sprintf("audio/%s", p.Format),
+							MIMEType: fmt.Sprintf("audio/%s", part.Audio.Format),
 							Data:     data,
 						},
 					}
 				}
 
-			case *types.MessageToolCall:
+			case part.ToolCall != nil:
 				// only support fucntion tool call
-				if p.Type != types.ToolTypeFunction || p.Function == nil {
+				if part.ToolCall.Type != types.ToolTypeFunction || part.ToolCall.Function == nil {
 					continue
 				}
 
 				args := map[string]any{}
-				if err := json.Unmarshal([]byte(p.Function.Arguments), &args); err != nil {
+				if err := json.Unmarshal([]byte(part.ToolCall.Function.Arguments), &args); err != nil {
 					return nil, nil, err
 				}
 
@@ -218,18 +222,18 @@ func toChatContents(messages []*types.Message) ([]*genai.Content, *contentsOpt, 
 
 				toPart = &genai.Part{
 					FunctionCall: &genai.FunctionCall{
-						ID:   p.ID,
-						Name: p.Function.Name,
+						ID:   part.ToolCall.ID,
+						Name: part.ToolCall.Function.Name,
 						Args: args,
 					},
 					ThoughtSignature: toolCallthoughtSignature,
 				}
-			case *types.MessageToolResult:
+			case part.ToolResult != nil:
 				toPart = &genai.Part{
 					FunctionResponse: &genai.FunctionResponse{
-						ID:       p.ID,
-						Name:     p.Name,
-						Response: map[string]any{"output": p.Result},
+						ID:       part.ToolResult.ID,
+						Name:     part.ToolResult.Name,
+						Response: map[string]any{"output": part.ToolResult.Result},
 					},
 				}
 			}
@@ -360,12 +364,12 @@ func fromChatCompletion(rsp *genai.GenerateContentResponse, delta bool) (*types.
 
 		if part.Text != "" {
 			if part.Thought {
-				message.Parts = append(message.Parts, &types.MessageReasoning{
+				message.Parts = append(message.Parts, &types.MessagePart{Reasoning: &types.MessageReasoning{
 					Text:             part.Text,
 					ThoughtSignature: thoughtSignature,
-				})
+				}})
 			} else {
-				message.Parts = append(message.Parts, &types.MessageText{Text: part.Text})
+				message.Parts = append(message.Parts, &types.MessagePart{Text: &types.MessageText{Text: part.Text}})
 			}
 		}
 
@@ -373,10 +377,10 @@ func fromChatCompletion(rsp *genai.GenerateContentResponse, delta bool) (*types.
 			if strings.HasPrefix(part.InlineData.MIMEType, "audio/") {
 				format := strings.TrimPrefix(part.InlineData.MIMEType, "audio/")
 				data := base64.StdEncoding.EncodeToString(part.InlineData.Data)
-				message.Parts = append(message.Parts, &types.MessageAudio{
+				message.Parts = append(message.Parts, &types.MessagePart{Audio: &types.MessageAudio{
 					Format: format,
 					Data:   data,
-				})
+				}})
 			}
 		}
 
@@ -397,7 +401,7 @@ func fromChatCompletion(rsp *genai.GenerateContentResponse, delta bool) (*types.
 						Arguments: string(args),
 					},
 				}
-				message.Parts = append(message.Parts, toolCal)
+				message.Parts = append(message.Parts, &types.MessagePart{ToolCall: toolCal})
 			}
 		}
 	}

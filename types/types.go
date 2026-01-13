@@ -46,9 +46,9 @@ const (
 )
 
 type Message struct {
-	ID    string
-	Role  MessageRole
-	Parts []MessagePart
+	ID    string         `json:"id,omitempty" yaml:"id,omitempty"`
+	Role  MessageRole    `json:"role,omitempty" yaml:"role,omitempty"`
+	Parts []*MessagePart `json:"parts,omitempty" yaml:"parts,omitempty"`
 
 	info map[string]any
 }
@@ -86,17 +86,17 @@ func (m *Message) String() string {
 	sb := strings.Builder{}
 	sb.WriteString(string(m.Role) + ":\n")
 	for _, part := range m.Parts {
-		switch p := part.(type) {
-		case *MessageText:
-			sb.WriteString(fmt.Sprintf("%s\n", p.Text))
-		case *MessageToolCall:
-			sb.WriteString(fmt.Sprintf("[tool] %s %s\n", p.Function.Name, p.Function.Arguments))
-		case *MessageToolResult:
-			sb.WriteString(fmt.Sprintf("[toolResult] %s %s\n", p.Name, p.Result))
-		case *MessageReasoning:
-			sb.WriteString(fmt.Sprintf("[think] %s\n", p.Text))
+		switch {
+		case part.Text != nil:
+			sb.WriteString(fmt.Sprintf("%s\n", part.Text.Text))
+		case part.ToolCall != nil:
+			sb.WriteString(fmt.Sprintf("[tool] %s %s\n", part.ToolCall.Function.Name, part.ToolCall.Function.Arguments))
+		case part.ToolResult != nil:
+			sb.WriteString(fmt.Sprintf("[toolResult] %s %s\n", part.ToolResult.Name, part.ToolResult.Result))
+		case part.Reasoning != nil:
+			sb.WriteString(fmt.Sprintf("[think] %s\n", part.Reasoning.Text))
 		default:
-			sb.WriteString(fmt.Sprintf("[%T]...\n", part))
+			//
 		}
 	}
 
@@ -106,8 +106,8 @@ func (m *Message) String() string {
 func (c *Message) Text() string {
 	sb := strings.Builder{}
 	for _, part := range c.Parts {
-		if text, ok := part.(*MessageText); ok {
-			sb.WriteString(text.Text)
+		if part.Text != nil {
+			sb.WriteString(part.Text.Text)
 		}
 	}
 	return sb.String()
@@ -116,9 +116,8 @@ func (c *Message) Text() string {
 func (c *Message) ToolCalls() []*MessageToolCall {
 	toolCalls := []*MessageToolCall{}
 	for _, part := range c.Parts {
-		switch p := part.(type) {
-		case *MessageToolCall:
-			toolCalls = append(toolCalls, p)
+		if part.ToolCall != nil {
+			toolCalls = append(toolCalls, part.ToolCall)
 		}
 	}
 	return toolCalls
@@ -132,102 +131,92 @@ func (c *Message) IsReasoning() bool {
 	hasReasonPart := false
 	hasOtherPart := false
 	for _, part := range c.Parts {
-		switch part.(type) {
-		case *MessageReasoning:
+		if part.Reasoning != nil {
 			hasReasonPart = true
-		default:
-			hasOtherPart = true
+		} else {
+			hasOtherPart = false
 		}
 	}
 
 	return hasReasonPart && !hasOtherPart
 }
 
-type MessagePart interface {
-	isMessagePart()
+type MessagePart struct {
+	// oneof
+	Text             *MessageText             `json:"text,omitempty" yaml:"text,omitempty"`
+	Reasoning        *MessageReasoning        `json:"reasoning,omitempty" yaml:"reasoning,omitempty"`
+	Refusal          *MessageRefusal          `json:"refusal,omitempty" yaml:"refusal,omitempty"`
+	ImageURL         *MessageImageURL         `json:"imageurl,omitempty" yaml:"imageurl,omitempty"`
+	Audio            *MessageAudio            `json:"audio,omitempty" yaml:"audio,omitempty"`
+	File             *MessageFile             `json:"file,omitempty" yaml:"file,omitempty"`
+	ToolCall         *MessageToolCall         `json:"toolcall,omitempty" yaml:"toolcall,omitempty"`
+	ToolResult       *MessageToolResult       `json:"toolresult,omitempty" yaml:"toolresult,omitempty"`
+	RealtimeResponse *MessageRealtimeResponse `json:"realtimeresponse,omitempty" yaml:"realtimeresponse,omitempty"`
 }
 
 func NewTextMessage(role MessageRole, text string) *Message {
 	msg := NewMessage(role)
-	msg.Parts = append(msg.Parts, &MessageText{Text: text})
+	msg.Parts = append(msg.Parts, &MessagePart{Text: &MessageText{Text: text}})
 	return msg
 }
 
 type MessageText struct {
-	Text  string
-	Delta bool
+	Text  string `json:"text,omitempty" yaml:"text,omitempty"`
+	Delta bool   `json:"delta,omitempty" yaml:"delta,omitempty"`
 }
-
-func (*MessageText) isMessagePart() {}
 
 type MessageReasoning struct {
-	Text             string
-	ThoughtSignature string //for gemini
+	Text             string `json:"text,omitempty" yaml:"text,omitempty"`
+	ThoughtSignature string `json:"thoughtSignature,omitempty" yaml:"thoughtSignature,omitempty"` //for gemini
 }
-
-func (*MessageReasoning) isMessagePart() {}
 
 type MessageRefusal struct {
-	Text string
+	Text string `json:"text,omitempty" yaml:"text,omitempty"`
 }
-
-func (*MessageRefusal) isMessagePart() {}
 
 type MessageImageURL struct {
-	URL string
+	URL string `json:"url,omitempty" yaml:"url,omitempty"`
 	// Any of "auto", "low", "high".
-	Detail string
-	Format string
+	Detail string `json:"detail,omitempty" yaml:"detail,omitempty"`
+	Format string `json:"format,omitempty" yaml:"format,omitempty"`
 }
-
-func (*MessageImageURL) isMessagePart() {}
 
 type MessageAudio struct {
-	ID         string
-	Data       string // Base64 encoded audio data.
-	Format     string // Openai: Any of "wav", "mp3", "pcm16".
-	Transcript string
-	Delta      bool
+	ID         string `json:"id,omitempty" yaml:"id,omitempty"`
+	Data       string `json:"data,omitempty" yaml:"data,omitempty"`     // base64 encoded audio data.
+	Format     string `json:"format,omitempty" yaml:"format,omitempty"` // openai: any of "wav", "mp3", "pcm16".
+	Transcript string `json:"transcript,omitempty" yaml:"transcript,omitempty"`
+	Delta      bool   `json:"delta,omitempty" yaml:"delta,omitempty"`
 }
-
-func (*MessageAudio) isMessagePart() {}
 
 type MessageFile struct {
-	MIMEType string
-	Name     string
-	Data     []byte
+	MIMEType string `json:"mimeType,omitempty" yaml:"mimeType,omitempty"`
+	Name     string `json:"name,omitempty" yaml:"name,omitempty"`
+	Data     string `json:"data,omitempty" yaml:"data,omitempty"` //base64
 }
 
-func (*MessageFile) isMessagePart() {}
-
 type MessageToolCall struct {
-	ID       string
-	Type     ToolType
-	Function *ToolCallFunction
-	Result   string //option
-	Tip      string //option
-	Error    error  //option
+	ID       string            `json:"id,omitempty" yaml:"id,omitempty"`
+	Type     ToolType          `json:"type,omitempty" yaml:"type,omitempty"`
+	Function *ToolCallFunction `json:"function,omitempty" yaml:"function,omitempty"`
+	Result   string            `json:"-" yaml:"-"` //option
+	Tip      string            `json:"-" yaml:"-"` //option
+	Error    error             `json:"-" yaml:"-"` //option
 }
 
 type ToolCallFunction struct {
-	Name      string
-	Arguments string
+	Name      string `json:"name,omitempty" yaml:"name,omitempty"`
+	Arguments string `json:"arguments,omitempty" yaml:"arguments,omitempty"`
 }
-
-func (*MessageToolCall) isMessagePart() {}
 
 type MessageToolResult struct {
-	ID     string
-	Name   string
-	Result string
+	ID     string `json:"id,omitempty" yaml:"id,omitempty"`
+	Name   string `json:"name,omitempty" yaml:"name,omitempty"`
+	Result string `json:"result,omitempty" yaml:"result,omitempty"`
 }
-
-func (*MessageToolResult) isMessagePart() {}
 
 type MessageRealtimeResponse struct {
 }
-
-func (*MessageRealtimeResponse) isMessagePart() {}
 
 type Completion struct {
 	Delta   bool

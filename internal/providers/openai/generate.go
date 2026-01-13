@@ -2,10 +2,8 @@ package openai
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
-	"net/http"
 
 	"github.com/xucx/llmapi/types"
 
@@ -88,9 +86,9 @@ func toMessages(opts *types.ChatOptions, messages []*types.Message) ([]openai.Ch
 		switch msg.Role {
 		case types.MessageRoleSystem:
 			for _, part := range msg.Parts {
-				switch p := part.(type) {
-				case *types.MessageText:
-					openaiMsgs = append(openaiMsgs, openai.SystemMessage(p.Text))
+				switch {
+				case part.Text != nil:
+					openaiMsgs = append(openaiMsgs, openai.SystemMessage(part.Text.Text))
 				default:
 					//not support
 				}
@@ -98,49 +96,38 @@ func toMessages(opts *types.ChatOptions, messages []*types.Message) ([]openai.Ch
 		case types.MessageRoleUser:
 			parts := []openai.ChatCompletionContentPartUnionParam{}
 			for _, part := range msg.Parts {
-				switch p := part.(type) {
-				case *types.MessageText:
+				switch {
+				case part.Text != nil:
 					parts = append(parts, openai.ChatCompletionContentPartUnionParam{
 						OfText: &openai.ChatCompletionContentPartTextParam{
-							Text: p.Text,
+							Text: part.Text.Text,
 						},
 					})
-				case *types.MessageImageURL:
+				case part.ImageURL != nil:
 					parts = append(parts, openai.ChatCompletionContentPartUnionParam{
 						OfImageURL: &openai.ChatCompletionContentPartImageParam{
 							ImageURL: openai.ChatCompletionContentPartImageImageURLParam{
-								URL:    p.URL,
-								Detail: p.Detail,
+								URL:    part.ImageURL.URL,
+								Detail: part.ImageURL.Detail,
 							},
 						},
 					})
-				case *types.MessageAudio:
+				case part.Audio != nil:
 					messageOpts.hasAudio = true
 					parts = append(parts, openai.ChatCompletionContentPartUnionParam{
 						OfInputAudio: &openai.ChatCompletionContentPartInputAudioParam{
 							InputAudio: openai.ChatCompletionContentPartInputAudioInputAudioParam{
-								Data:   p.Data,
-								Format: p.Format,
+								Data:   part.Audio.Data,
+								Format: part.Audio.Format,
 							},
 						},
 					})
-				case *types.MessageFile:
-					mime := p.MIMEType
-					if mime == "" {
-						mime = http.DetectContentType(p.Data)
-					}
-
-					base64Data := fmt.Sprintf(
-						"data:%s,base64,%s",
-						mime,
-						base64.StdEncoding.EncodeToString(p.Data),
-					)
-
+				case part.File != nil:
 					parts = append(parts, openai.ChatCompletionContentPartUnionParam{
 						OfFile: &openai.ChatCompletionContentPartFileParam{
 							File: openai.ChatCompletionContentPartFileFileParam{
-								FileData: param.Opt[string]{Value: base64Data},
-								Filename: param.Opt[string]{Value: p.Name},
+								FileData: param.Opt[string]{Value: part.File.Data},
+								Filename: param.Opt[string]{Value: part.File.Name},
 							},
 						},
 					})
@@ -155,35 +142,35 @@ func toMessages(opts *types.ChatOptions, messages []*types.Message) ([]openai.Ch
 			}
 			hasContent := false
 			for _, part := range msg.Parts {
-				switch p := part.(type) {
-				case *types.MessageText:
-					assistant.Content.OfString = openai.String(p.Text)
+				switch {
+				case part.Text != nil:
+					assistant.Content.OfString = openai.String(part.Text.Text)
 					hasContent = true
-				case *types.MessageRefusal:
-					assistant.Refusal = openai.String(p.Text)
+				case part.Refusal != nil:
+					assistant.Refusal = openai.String(part.Refusal.Text)
 					hasContent = true
-				case *types.MessageAudio:
-					if !p.Delta && p.ID != "" {
+				case part.Audio != nil:
+					if !part.Audio.Delta && part.Audio.ID != "" {
 						messageOpts.hasAudio = true
 						openaiMsgs = append(openaiMsgs, openai.ChatCompletionMessageParamUnion{OfAssistant: &openai.ChatCompletionAssistantMessageParam{
 							Role: "assistant",
 							Content: openai.ChatCompletionAssistantMessageParamContentUnion{
-								OfString: openai.String(p.Transcript),
+								OfString: openai.String(part.Audio.Transcript),
 							},
 							// Audio: openai.ChatCompletionAssistantMessageParamAudio{
 							// 	ID: p.ID,
 							// },
 						}})
 					}
-				case *types.MessageToolCall:
+				case part.ToolCall != nil:
 					//only support function call
 					assistant.ToolCalls = append(assistant.ToolCalls, openai.ChatCompletionMessageToolCallUnionParam{
 						OfFunction: &openai.ChatCompletionMessageFunctionToolCallParam{
 							Type: "function",
-							ID:   p.ID,
+							ID:   part.ToolCall.ID,
 							Function: openai.ChatCompletionMessageFunctionToolCallFunctionParam{
-								Name:      p.Function.Name,
-								Arguments: p.Function.Arguments,
+								Name:      part.ToolCall.Function.Name,
+								Arguments: part.ToolCall.Function.Arguments,
 							},
 						},
 					})
@@ -195,9 +182,9 @@ func toMessages(opts *types.ChatOptions, messages []*types.Message) ([]openai.Ch
 			}
 		case types.MessageRoleTool:
 			for _, part := range msg.Parts {
-				switch p := part.(type) {
-				case *types.MessageToolResult:
-					openaiMsgs = append(openaiMsgs, openai.ToolMessage(p.Result, p.ID))
+				switch {
+				case part.ToolResult != nil:
+					openaiMsgs = append(openaiMsgs, openai.ToolMessage(part.ToolResult.Result, part.ToolResult.ID))
 				default:
 					//not support
 				}
@@ -273,32 +260,32 @@ func fromComplateChunk(completion *openai.ChatCompletionChunk, thinkChunks []str
 	}
 
 	if len(thinkChunks) > 0 && len(thinkChunks[0]) > 0 {
-		message.Parts = append(message.Parts, &types.MessageReasoning{Text: thinkChunks[0]})
+		message.Parts = append(message.Parts, &types.MessagePart{Reasoning: &types.MessageReasoning{Text: thinkChunks[0]}})
 	}
 
 	if choice.Delta.Refusal != "" {
-		message.Parts = append(message.Parts, &types.MessageRefusal{Text: choice.Delta.Content})
+		message.Parts = append(message.Parts, &types.MessagePart{Refusal: &types.MessageRefusal{Text: choice.Delta.Content}})
 	}
 
 	if choice.Delta.Content != "" {
-		message.Parts = append(message.Parts, &types.MessageText{
+		message.Parts = append(message.Parts, &types.MessagePart{Text: &types.MessageText{
 			Delta: true,
 			Text:  choice.Delta.Content,
-		})
+		}})
 	}
 
 	for _, toolCall := range choice.Delta.ToolCalls {
 		if toolCall.Type != "function" {
 			continue
 		}
-		message.Parts = append(message.Parts, &types.MessageToolCall{
+		message.Parts = append(message.Parts, &types.MessagePart{ToolCall: &types.MessageToolCall{
 			ID:   toolCall.ID,
 			Type: types.ToolTypeFunction,
 			Function: &types.ToolCallFunction{
 				Name:      toolCall.Function.Name,
 				Arguments: toolCall.Function.Arguments,
 			},
-		})
+		}})
 	}
 
 	return &types.Completion{
@@ -336,24 +323,24 @@ func fromComplate(completion *openai.ChatCompletion, thinks []thinkExtraItem, de
 	}
 
 	if reasoning != "" {
-		message.Parts = append(message.Parts, &types.MessageReasoning{Text: reasoning})
+		message.Parts = append(message.Parts, &types.MessagePart{Reasoning: &types.MessageReasoning{Text: reasoning}})
 	}
 
 	if content != "" {
-		message.Parts = append(message.Parts, &types.MessageText{Text: content})
+		message.Parts = append(message.Parts, &types.MessagePart{Text: &types.MessageText{Text: content}})
 	}
 
 	if choice.Message.Refusal != "" {
-		message.Parts = append(message.Parts, &types.MessageRefusal{Text: choice.Message.Content})
+		message.Parts = append(message.Parts, &types.MessagePart{Refusal: &types.MessageRefusal{Text: choice.Message.Content}})
 	}
 
 	if choice.Message.Audio.ID != "" {
-		message.Parts = append(message.Parts, &types.MessageAudio{
+		message.Parts = append(message.Parts, &types.MessagePart{Audio: &types.MessageAudio{
 			ID:         choice.Message.Audio.ID,
 			Format:     "mp3",
 			Data:       choice.Message.Audio.Data,
 			Transcript: choice.Message.Audio.Transcript,
-		})
+		}})
 	}
 
 	if !delta {
@@ -361,14 +348,14 @@ func fromComplate(completion *openai.ChatCompletion, thinks []thinkExtraItem, de
 			if toolCall.Type != "function" {
 				continue
 			}
-			message.Parts = append(message.Parts, &types.MessageToolCall{
+			message.Parts = append(message.Parts, &types.MessagePart{ToolCall: &types.MessageToolCall{
 				ID:   toolCall.ID,
 				Type: types.ToolTypeFunction,
 				Function: &types.ToolCallFunction{
 					Name:      toolCall.Function.Name,
 					Arguments: toolCall.Function.Arguments,
 				},
-			})
+			}})
 		}
 	}
 

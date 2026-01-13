@@ -98,7 +98,12 @@ func (a *Auth) checkGrpcAuth(ctx context.Context) error {
 		return errors.New("authorization not found")
 	}
 
-	return a.checkToken(tokens[0])
+	ts := strings.Fields(tokens[0])
+	if len(ts) != 2 || ts[0] != DefaultAuthHeaderType {
+		return errors.New("wrong token")
+	}
+
+	return a.checkToken(ts[1])
 }
 
 func (a *Auth) checkHttpAuth(ctx echo.Context) error {
@@ -122,7 +127,7 @@ func (a *Auth) checkToken(token string) error {
 		}
 	}
 
-	return errors.New("token not match")
+	return errors.New("wrong token")
 }
 
 func DefaultAuthHttpHeaderGetter(ctx echo.Context) (string, error) {

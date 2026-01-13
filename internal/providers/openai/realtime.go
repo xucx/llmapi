@@ -99,12 +99,12 @@ func (r *ClientSession) Send(ctx context.Context, msg *types.Message) error {
 	switch msg.Role {
 	case types.MessageRoleSystem:
 		messageEvent.Item.Role = "system"
-		for _, p := range msg.Parts {
-			switch pp := p.(type) {
-			case *types.MessageText:
+		for _, part := range msg.Parts {
+			switch {
+			case part.Text != nil:
 				messageEvent.Item.Content = append(messageEvent.Item.Content, &RealTimeContent{
 					Type: "input_text",
-					Text: pp.Text,
+					Text: part.Text.Text,
 				})
 			default:
 				return fmt.Errorf("not support message for realtime system role")
@@ -112,38 +112,38 @@ func (r *ClientSession) Send(ctx context.Context, msg *types.Message) error {
 		}
 	case types.MessageRoleUser:
 		messageEvent.Item.Role = "user"
-		for _, p := range msg.Parts {
-			switch pp := p.(type) {
-			case *types.MessageText:
+		for _, part := range msg.Parts {
+			switch {
+			case part.Text != nil:
 				messageEvent.Item.Content = append(messageEvent.Item.Content, &RealTimeContent{
 					Type: "input_text",
-					Text: pp.Text,
+					Text: part.Text.Text,
 				})
 
-			case *types.MessageAudio:
-				if pp.Format != "pcm16" {
-					return fmt.Errorf("realtime audio format %s not support", pp.Format)
+			case part.Audio != nil:
+				if part.Audio.Format != "pcm16" {
+					return fmt.Errorf("realtime audio format %s not support", part.Audio.Format)
 				}
 
-				if !pp.Delta {
+				if !part.Audio.Delta {
 					messageEvent.Item.Content = append(messageEvent.Item.Content, &RealTimeContent{
 						Type:  "input_audio",
-						Audio: pp.Data,
+						Audio: part.Audio.Data,
 					})
 				} else {
 					audioDeltaEvent := NewClientEventInputAudioBufferAppend()
-					audioDeltaEvent.Audio = pp.Data
+					audioDeltaEvent.Audio = part.Audio.Data
 					otherEvents = append(otherEvents, audioDeltaEvent)
 				}
-			case *types.MessageImageURL:
-				if !strings.EqualFold(pp.Format, "PNG") || !strings.EqualFold(pp.Format, "JPEG") {
-					return fmt.Errorf("realtime image url format %s not support", pp.Format)
+			case part.ImageURL != nil:
+				if !strings.EqualFold(part.ImageURL.Format, "PNG") || !strings.EqualFold(part.ImageURL.Format, "JPEG") {
+					return fmt.Errorf("realtime image url format %s not support", part.ImageURL.Format)
 				}
 				messageEvent.Item.Content = append(messageEvent.Item.Content, &RealTimeContent{
 					Type:     "input_image",
-					ImageUrl: pp.URL,
+					ImageUrl: part.ImageURL.URL,
 				})
-			case *types.MessageRealtimeResponse:
+			case part.RealtimeResponse != nil:
 				createRspEvent := NewClientEventResponseCreate()
 				otherEvents = append(otherEvents, createRspEvent)
 			default:
@@ -153,32 +153,32 @@ func (r *ClientSession) Send(ctx context.Context, msg *types.Message) error {
 
 	case types.MessageRoleAssistant:
 		messageEvent.Item.Role = "assistant"
-		for _, p := range msg.Parts {
-			switch pp := p.(type) {
-			case *types.MessageText:
+		for _, part := range msg.Parts {
+			switch {
+			case part.Text != nil:
 				messageEvent.Item.Content = append(messageEvent.Item.Content, &RealTimeContent{
 					Type: "output_text",
-					Text: pp.Text,
+					Text: part.Text.Text,
 				})
-			case *types.MessageToolCall:
+			case part.ToolCall != nil:
 				toolCallEvent := NewClientEventConversationItemCreate()
 				toolCallEvent.Item.Type = "function_call"
-				toolCallEvent.Item.CallID = pp.ID
-				toolCallEvent.Item.Name = pp.Function.Name
-				toolCallEvent.Item.Arguments = pp.Function.Arguments
+				toolCallEvent.Item.CallID = part.ToolCall.ID
+				toolCallEvent.Item.Name = part.ToolCall.Function.Name
+				toolCallEvent.Item.Arguments = part.ToolCall.Function.Arguments
 				otherEvents = append(otherEvents, toolCallEvent)
 			default:
 				return fmt.Errorf("unsupport realtime assistant message")
 			}
 		}
 	case types.MessageRoleTool:
-		for _, p := range msg.Parts {
-			switch pp := p.(type) {
-			case *types.MessageToolResult:
+		for _, part := range msg.Parts {
+			switch {
+			case part.ToolResult != nil:
 				toolOutputEvent := NewClientEventConversationItemCreate()
 				toolOutputEvent.Item.Type = "function_call_output"
-				toolOutputEvent.Item.CallID = pp.ID
-				toolOutputEvent.Item.Output = pp.Result
+				toolOutputEvent.Item.CallID = part.ToolResult.ID
+				toolOutputEvent.Item.Output = part.ToolResult.Result
 				otherEvents = append(otherEvents, toolOutputEvent)
 			default:
 				return fmt.Errorf("unsupport realtime tool message")
@@ -226,11 +226,11 @@ func (r *ClientSession) Recv(ctx context.Context) (*types.Completion, error) {
 	switch p := event.(type) {
 	case *ServerEventResponseOutputAudioDelta:
 		completion.Delta = true
-		completion.Message.Parts = append(completion.Message.Parts, &types.MessageAudio{
+		completion.Message.Parts = append(completion.Message.Parts, &types.MessagePart{Audio: &types.MessageAudio{
 			Data:   p.Delta,
 			Format: "pcm16",
 			Delta:  true,
-		})
+		}})
 	case *ServerEventResponseDone:
 		if p.Response.Status != "completed" {
 			break
@@ -242,24 +242,24 @@ func (r *ClientSession) Recv(ctx context.Context) (*types.Completion, error) {
 				for _, content := range output.Content {
 					switch content.Type {
 					case "output_text":
-						completion.Message.Parts = append(completion.Message.Parts, &types.MessageText{
+						completion.Message.Parts = append(completion.Message.Parts, &types.MessagePart{Text: &types.MessageText{
 							Text: content.Text,
-						})
+						}})
 					case "output_audio":
-						completion.Message.Parts = append(completion.Message.Parts, &types.MessageAudio{
+						completion.Message.Parts = append(completion.Message.Parts, &types.MessagePart{Audio: &types.MessageAudio{
 							Transcript: content.Transcript,
-						})
+						}})
 					}
 				}
 			case "function_call":
-				completion.Message.Parts = append(completion.Message.Parts, &types.MessageToolCall{
+				completion.Message.Parts = append(completion.Message.Parts, &types.MessagePart{ToolCall: &types.MessageToolCall{
 					ID:   output.CallID,
 					Type: types.ToolTypeFunction,
 					Function: &types.ToolCallFunction{
 						Name:      output.Name,
 						Arguments: output.Arguments,
 					},
-				})
+				}})
 			}
 		}
 	case *Event:

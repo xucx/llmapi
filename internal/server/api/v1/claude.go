@@ -124,13 +124,13 @@ func (s *ApiService) ClaudeCreateMessage(c echo.Context) error {
 		sysMsg := types.NewMessage(types.MessageRoleSystem)
 		switch v := req.System.(type) {
 		case string:
-			sysMsg.Parts = append(sysMsg.Parts, &types.MessageText{Text: v})
+			sysMsg.Parts = append(sysMsg.Parts, &types.MessagePart{Text: &types.MessageText{Text: v}})
 		case []interface{}:
 			for _, item := range v {
 				if itemMap, ok := item.(map[string]interface{}); ok {
 					if typeVal, ok := itemMap["type"].(string); ok && typeVal == "text" {
 						if text, ok := itemMap["text"].(string); ok {
-							sysMsg.Parts = append(sysMsg.Parts, &types.MessageText{Text: text})
+							sysMsg.Parts = append(sysMsg.Parts, &types.MessagePart{Text: &types.MessageText{Text: text}})
 						}
 					}
 				}
@@ -168,7 +168,7 @@ func (s *ApiService) ClaudeCreateMessage(c echo.Context) error {
 			return opts
 		})
 	}
-	
+
 	// MaxTokens
 	if req.MaxTokens > 0 {
 		options = append(options, func(opts *types.ChatOptions) *types.ChatOptions {
@@ -176,7 +176,7 @@ func (s *ApiService) ClaudeCreateMessage(c echo.Context) error {
 			return opts
 		})
 	}
-	
+
 	// TopP
 	if req.TopP != nil {
 		options = append(options, func(opts *types.ChatOptions) *types.ChatOptions {
@@ -184,7 +184,7 @@ func (s *ApiService) ClaudeCreateMessage(c echo.Context) error {
 			return opts
 		})
 	}
-	
+
 	// TopK
 	if req.TopK != nil {
 		options = append(options, func(opts *types.ChatOptions) *types.ChatOptions {
@@ -192,7 +192,7 @@ func (s *ApiService) ClaudeCreateMessage(c echo.Context) error {
 			return opts
 		})
 	}
-	
+
 	// StopSequences
 	if len(req.StopSequences) > 0 {
 		options = append(options, func(opts *types.ChatOptions) *types.ChatOptions {
@@ -228,28 +228,28 @@ func (s *ApiService) ClaudeCreateMessage(c echo.Context) error {
 		// Send message_start event first (simplified)
 		// Since we don't have the initial response structure available before Generate returns,
 		// we might need to send a dummy message_start or wait for first chunk if it contained metadata.
-		// For now, we rely on content_block_delta being acceptable by some clients, 
+		// For now, we rely on content_block_delta being acceptable by some clients,
 		// but standard Claude stream starts with message_start.
-		
+
 		msgID := "msg_" + uuid.NewString()
 		msgStart := ClaudeStreamEvent{
 			Type: "message_start",
 			Message: &ClaudeMessageResponse{
-				ID: msgID,
-				Type: "message",
-				Role: "assistant",
-				Model: req.Model,
+				ID:      msgID,
+				Type:    "message",
+				Role:    "assistant",
+				Model:   req.Model,
 				Content: []ClaudeContent{},
-				Usage: ClaudeUsage{InputTokens: 0, OutputTokens: 0}, // Placeholder
+				Usage:   ClaudeUsage{InputTokens: 0, OutputTokens: 0}, // Placeholder
 			},
 		}
-		
+
 		if startData, err := json.Marshal(msgStart); err == nil {
 			fmt.Fprintf(c.Response(), "event: message_start\ndata: %s\n\n", startData)
-			
+
 			// Also send content_block_start for text
 			blockStart := ClaudeStreamEvent{
-				Type: "content_block_start",
+				Type:  "content_block_start",
 				Index: 0,
 				ContentBlock: &ClaudeContent{
 					Type: "text",
@@ -265,7 +265,7 @@ func (s *ApiService) ClaudeCreateMessage(c echo.Context) error {
 		_, err := s.models.Generate(ctx, req.Model, messages, options...)
 		if err != nil {
 			log.Errorw("llm chat fail", "model", req.Model, "error", err)
-			return nil 
+			return nil
 		}
 
 		// Send message_stop event at the end
@@ -276,7 +276,7 @@ func (s *ApiService) ClaudeCreateMessage(c echo.Context) error {
 			fmt.Fprintf(c.Response(), "event: message_stop\ndata: %s\n\n", stopData)
 			c.Response().Flush()
 		}
-		
+
 		return nil
 
 	} else {
@@ -312,7 +312,7 @@ func fromClaudeMessage(m ClaudeMessage) (*types.Message, error) {
 	if m.Content != nil {
 		switch c := m.Content.(type) {
 		case string:
-			msg.Parts = append(msg.Parts, &types.MessageText{Text: c})
+			msg.Parts = append(msg.Parts, &types.MessagePart{Text: &types.MessageText{Text: c}})
 		case []interface{}:
 			for _, item := range c {
 				if itemMap, ok := item.(map[string]interface{}); ok {
@@ -320,7 +320,7 @@ func fromClaudeMessage(m ClaudeMessage) (*types.Message, error) {
 					switch itemType {
 					case "text":
 						if text, ok := itemMap["text"].(string); ok {
-							msg.Parts = append(msg.Parts, &types.MessageText{Text: text})
+							msg.Parts = append(msg.Parts, &types.MessagePart{Text: &types.MessageText{Text: text}})
 						}
 					case "image":
 						if sourceMap, ok := itemMap["source"].(map[string]interface{}); ok {
@@ -338,14 +338,14 @@ func fromClaudeMessage(m ClaudeMessage) (*types.Message, error) {
 
 						inputJson, _ := json.Marshal(input)
 
-						msg.Parts = append(msg.Parts, &types.MessageToolCall{
+						msg.Parts = append(msg.Parts, &types.MessagePart{ToolCall: &types.MessageToolCall{
 							ID:   id,
 							Type: types.ToolTypeFunction,
 							Function: &types.ToolCallFunction{
 								Name:      name,
 								Arguments: string(inputJson),
 							},
-						})
+						}})
 					case "tool_result":
 						toolUseID, _ := itemMap["tool_use_id"].(string)
 						// Content can be string or array of blocks
@@ -358,10 +358,10 @@ func fromClaudeMessage(m ClaudeMessage) (*types.Message, error) {
 							contentVal = string(contentBytes)
 						}
 
-						msg.Parts = append(msg.Parts, &types.MessageToolResult{
+						msg.Parts = append(msg.Parts, &types.MessagePart{ToolResult: &types.MessageToolResult{
 							ID:     toolUseID,
 							Result: contentVal,
-						})
+						}})
 					}
 				}
 			}
@@ -454,11 +454,11 @@ func toClaudeStreamEvents(c *types.Completion) ([]*ClaudeStreamEvent, error) {
 				},
 			})
 		}
-		
+
 		// 检查工具调用增量（需要额外支持，目前types.Message的ToolCalls可能不是增量的）
 		// 如果需要完整支持Claude流式协议，这里需要更复杂的状态机来生成:
 		// message_start, content_block_start, content_block_delta, content_block_stop, message_delta, message_stop
-		
+
 		// 简单的模拟结束：如果是流的最后一帧（如何判断？）
 		// 目前的types.Completion没有明确的“流结束”标志，除了Stream回调结束。
 		// 但OpenAI兼容接口通过 "[DONE]" 标记。
